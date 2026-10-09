@@ -72,6 +72,17 @@ SOUNDSLICE_PASSWORD="ton_mot_de_passe"
 curl -F "file=@piece.mid" -F "name=Mon morceau" http://localhost:8000/publish-soundslice
 ```
 
+Envoi en lot (équivalent du script `soundslice_upload.py`) :
+titre lu dans `<work-title>` du MusicXML (sinon nom du fichier),
+`listId` pour ranger dans une liste, `embedStatus` (`1`, `2` ou `4`),
+`dryRun=true` pour lister sans rien envoyer → récap JSON
+(`soundslice_resultats.json` téléchargeable depuis l'interface).
+
+```sh
+curl -F "files=@a.musicxml" -F "files=@b.mid" -F dryRun=true http://localhost:8000/publish-soundslice-batch
+curl -F "files=@a.musicxml" -F "files=@b.mid" -F listId=123 -F embedStatus=4 http://localhost:8000/publish-soundslice-batch
+```
+
 Docs API : <https://www.soundslice.com/help/data-api/>
 
 ## Docker

@@ -7,8 +7,10 @@ import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { convertMidiToMusicxml, resolveBinary } from "./musescore.js";
 import {
+  addSlicesToList,
   publishMusicXml,
   soundsliceConfigured,
+  titleFromMusicXml,
 } from "./soundslice.js";
 
 const PORT = Number(process.env.PORT ?? 8000);
@@ -151,10 +153,6 @@ app.post("/publish-soundslice", async (req, reply) => {
     return reply.code(400).send({ error: 'Champ "file" manquant ou vide' });
   }
 
-  const base =
-    (fields.name ||
-      parse(filename).name.replace(/[^\w-]+/g, "_").slice(0, 80) ||
-      "output").slice(0, 255);
   const artist = (fields.artist ?? "").slice(0, 255);
   const isMidi = /\.(mid|midi)$/i.test(filename);
   const isXml = /\.(musicxml|xml)$/i.test(filename);
@@ -180,7 +178,14 @@ app.post("/publish-soundslice", async (req, reply) => {
       await convertMidiToMusicxml(bin, inPath, outPath);
       xml = await readFile(outPath);
     }
-    const res = await publishMusicXml({ name: base, artist, xml });
+    // Titre : champ "name", sinon <work-title> du MusicXML, sinon nom du fichier
+    const title =
+      (
+        fields.name ||
+        titleFromMusicXml(xml) ||
+        parse(filename).name
+      ).slice(0, 255) || "output";
+    const res = await publishMusicXml({ name: title, artist, xml });
     return reply.send(res);
   } catch (e) {
     req.log.error(e);
@@ -188,6 +193,125 @@ app.post("/publish-soundslice", async (req, reply) => {
       .code(500)
       .send({ error: "Échec publication Soundslice", details: (e as Error).message });
   }
+});
+
+// POST /publish-soundslice-batch — N fichiers (champ "files") + champs
+// artist/listId/embedStatus/dryRun -> récap JSON
+// { dryRun, results: [{file,title,scorehash,url,embedUrl?}], failures: [{file,reason}] }
+app.post("/publish-soundslice-batch", async (req, reply) => {
+  const uploads: { filename: string; buf: Buffer }[] = [];
+  const fields: Record<string, string> = {};
+  for await (const part of req.parts()) {
+    if (part.type === "file") {
+      uploads.push({ filename: part.filename, buf: await part.toBuffer() });
+    } else {
+      fields[part.fieldname] =
+        typeof part.value === "string" ? part.value : String(part.value);
+    }
+  }
+  const valid = uploads.filter(
+    (u) =>
+      u.buf.length > 0 && /\.(mid|midi|musicxml|xml)$/i.test(u.filename),
+  );
+  if (valid.length === 0) {
+    return reply
+      .code(400)
+      .send({ error: 'Aucun .mid/.midi/.musicxml dans le champ "files"' });
+  }
+
+  // Titre prévisionnel : <work-title> si MusicXML, sinon nom du fichier
+  const previewTitle = (u: { filename: string; buf: Buffer }): string => {
+    if (/\.(musicxml|xml)$/i.test(u.filename)) {
+      const t = titleFromMusicXml(u.buf);
+      if (t) return t;
+    }
+    return parse(u.filename).name.slice(0, 255) || "output";
+  };
+
+  // dry-run : liste les titres sans rien envoyer (config non exigée)
+  if (fields.dryRun === "true" || fields.dryRun === "1") {
+    return reply.send({
+      dryRun: true,
+      items: valid.map((u) => ({ file: u.filename, title: previewTitle(u) })),
+    });
+  }
+
+  if (!soundsliceConfigured()) {
+    return reply.code(503).send({
+      error: "Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD manquants)",
+    });
+  }
+  const artist = (fields.artist ?? "").slice(0, 255);
+  const listId = (fields.listId ?? "").trim();
+  const embedStatus = fields.embedStatus ? Number(fields.embedStatus) : undefined;
+  if (embedStatus !== undefined && ![1, 2, 4].includes(embedStatus)) {
+    return reply
+      .code(400)
+      .send({ error: "embedStatus attendu : 1, 2 ou 4" });
+  }
+
+  let bin: string | null = null;
+  if (valid.some((u) => /\.(mid|midi)$/i.test(u.filename))) {
+    try {
+      bin = await resolveBinary();
+    } catch (e) {
+      return reply.code(500).send({ error: (e as Error).message });
+    }
+  }
+
+  const results: {
+    file: string;
+    title: string;
+    scorehash: string;
+    url: string;
+    embedUrl?: string;
+  }[] = [];
+  const failures: { file: string; reason: string }[] = [];
+  for (const u of valid) {
+    try {
+      let xml: Buffer;
+      if (/\.(musicxml|xml)$/i.test(u.filename)) {
+        xml = u.buf;
+      } else {
+        const tmp = await mkdtemp(join(tmpdir(), "mscore-"));
+        await writeFile(join(tmp, "input.mid"), u.buf);
+        const outPath = join(tmp, "output.musicxml");
+        await convertMidiToMusicxml(bin as string, join(tmp, "input.mid"), outPath);
+        xml = await readFile(outPath);
+      }
+      const title = titleFromMusicXml(xml) ?? previewTitle(u);
+      const pub = await publishMusicXml({
+        name: title,
+        artist,
+        embedStatus,
+        xml,
+      });
+      results.push({ file: u.filename, title, ...pub });
+    } catch (e) {
+      req.log.error({ file: u.filename, e });
+      failures.push({ file: u.filename, reason: (e as Error).message });
+    }
+  }
+
+  let listError: string | undefined;
+  if (listId && results.length > 0) {
+    try {
+      await addSlicesToList(
+        listId,
+        results.map((r) => r.scorehash),
+      );
+    } catch (e) {
+      listError = (e as Error).message;
+    }
+  }
+
+  return reply.send({
+    dryRun: false,
+    ...(listId ? { listId } : {}),
+    results,
+    failures,
+    ...(listError ? { listError } : {}),
+  });
 });
 
 // UI drag & drop : http://localhost:8000/
@@ -213,9 +337,11 @@ a.dl{color:#4ade80}.err{color:#f87171}.ok{color:#4ade80}
 <div id="bar">
 <button id="all">Tout convertir</button>
 <button id="zip" class="ghost">Tout télécharger (.zip)</button>
+<button id="pub" class="ghost">Tout publier (Soundslice)</button>
 <button id="clear" class="ghost">Effacer</button>
 </div>
 <div id="list"></div>
+<div id="recap"></div>
 <script>
 const drop=document.getElementById('drop'),input=document.getElementById('input'),
 list=document.getElementById('list'),files=new Map();
@@ -276,6 +402,36 @@ document.getElementById('zip').onclick=async()=>{
  const blob=await r.blob(),a=document.createElement('a');
  a.href=URL.createObjectURL(blob);a.download='musicxml.zip';a.click();
 };
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let lastRecap=null;
+async function publishAll(){
+ if(!soundslice){alert('Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD)');return;}
+ if(!files.size)return;
+ const fd=new FormData();for(const e of files.values())fd.append('files',e.file);
+ try{
+  const r=await fetch('/publish-soundslice-batch',{method:'POST',body:fd});
+  const t=await r.text();let j={};try{j=JSON.parse(t);}catch{}
+  if(!r.ok)throw new Error(((j.details||j.error||t)||'erreur').slice(0,300));
+  lastRecap=j;
+  const byName=new Map();for(const e of files.values())byName.set(e.file.name,e);
+  for(const res of j.results||[]){const e=byName.get(res.file);if(e){e.sliceUrl=res.url;e.status='OK';}}
+  for(const f of j.failures||[]){const e=byName.get(f.file);if(e)e.status='erreur : '+String(f.reason).slice(0,200);}
+ }catch(err){alert('Publication : '+err.message);}
+ render();renderRecap();
+}
+function renderRecap(){
+ const d=document.getElementById('recap');if(!lastRecap){d.innerHTML='';return;}
+ let h='<h3>Récap Soundslice</h3><ul>';
+ for(const r of lastRecap.results||[])h+='<li><a class="dl" target="_blank" href="'+esc(r.url)+'">'+esc(r.title)+'</a></li>';
+ for(const f of lastRecap.failures||[])h+='<li class="err">'+esc(f.file)+' : '+esc(f.reason)+'</li>';
+ h+='</ul>';
+ if(lastRecap.listError)h+='<p class="err">Liste : '+esc(lastRecap.listError)+'</p>';
+ d.innerHTML=h;
+ const b=document.createElement('button');b.className='ghost';b.textContent='Télécharger récap (.json)';
+ b.onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(lastRecap,null,2)],{type:'application/json'}));a.download='soundslice_resultats.json';a.click();};
+ d.appendChild(b);
+}
+document.getElementById('pub').onclick=publishAll;
 </script></body></html>`);
 });
 

@@ -61,17 +61,49 @@ function throwFor(status: number, json: any, action: string): never {
   throw new Error(`Soundslice ${status} sur ${action} : ${details}`);
 }
 
-export async function createSlice(opts: {
+// Titre lu dans le fichier (<work-title>), comme le script Python.
+// Retourne null si absent.
+export function titleFromMusicXml(xml: Buffer): string | null {
+  const m = xml
+    .toString("utf-8", 0, Math.min(xml.length, 200_000))
+    .match(/<work-title>([\s\S]*?)<\/work-title>/);
+  if (!m) return null;
+  const title = m[1].replace(/<[^>]*>/g, "").trim();
+  return title ? title.slice(0, 255) : null;
+}
+
+export interface SliceOptions {
   name: string;
   artist?: string;
-}): Promise<{ scorehash: string; slug: string; url: string }> {
+  /** 1 = URL secrète désactivée (défaut), 3 = activée */
+  status?: number;
+  /** 1 = désactivé (défaut), 2 = tous domaines, 4 = domaines autorisés */
+  embedStatus?: number;
+  /** 1 = impression désactivée (défaut), 3 = autorisée */
+  printStatus?: number;
+}
+
+export async function createSlice(opts: SliceOptions): Promise<{
+  scorehash: string;
+  slug: string;
+  url: string;
+  embedUrl?: string;
+}> {
   const form = new URLSearchParams({ name: opts.name.slice(0, 255) });
   if (opts.artist) form.set("artist", opts.artist.slice(0, 255));
+  if (opts.status) form.set("status", String(opts.status));
+  if (opts.embedStatus) form.set("embed_status", String(opts.embedStatus));
+  if (opts.printStatus) form.set("print_status", String(opts.printStatus));
   const { status, json } = await api("/slices/", { method: "POST", form });
   if (status !== 201 || !json?.scorehash) {
     throwFor(status, json, "création du slice");
   }
-  return { scorehash: json.scorehash, slug: json.slug, url: json.url };
+  return {
+    scorehash: json.scorehash,
+    slug: json.slug,
+    url: json.url,
+    embedUrl: json.embed_url,
+  };
 }
 
 async function initiateNotationUpload(scorehash: string): Promise<string> {
@@ -116,16 +148,37 @@ async function waitNotation(
   }
 }
 
-export async function publishMusicXml(opts: {
-  name: string;
-  artist?: string;
-  xml: Buffer;
-}): Promise<{ scorehash: string; url: string }> {
+export async function publishMusicXml(
+  opts: SliceOptions & { xml: Buffer },
+): Promise<{ scorehash: string; url: string; embedUrl?: string }> {
   if (opts.xml.length === 0) throw new Error("MusicXML vide");
-  const slice = await createSlice({ name: opts.name, artist: opts.artist });
+  const slice = await createSlice(opts);
   const putUrl = await initiateNotationUpload(slice.scorehash);
   await putNotation(putUrl, opts.xml);
   await waitNotation(slice.scorehash);
   const { json } = await api(`/slices/${encodeURIComponent(slice.scorehash)}/`);
-  return { scorehash: slice.scorehash, url: json?.url ?? slice.url };
+  return {
+    scorehash: slice.scorehash,
+    url: json?.url ?? slice.url,
+    embedUrl: json?.embed_url ?? slice.embedUrl,
+  };
+}
+
+// Range les slices dans une liste du compte (les "dossiers" n'existent plus,
+// remplacés par les listes).
+export async function addSlicesToList(
+  listId: string,
+  scorehashes: string[],
+): Promise<void> {
+  if (scorehashes.length === 0) return;
+  const form = new URLSearchParams({
+    slicehashes: scorehashes.join(","),
+  });
+  const { status, json } = await api(
+    `/lists/${encodeURIComponent(listId)}/slices/`,
+    { method: "POST", form },
+  );
+  if (status !== 201) {
+    throwFor(status, json, `ajout à la liste ${listId}`);
+  }
 }

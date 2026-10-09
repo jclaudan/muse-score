@@ -1,6 +1,6 @@
 {
   "name": "midi-musicxml-desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "App desktop MIDI -> MusicXML (Windows, macOS, Linux)",
   "author": "jclaudan",
@@ -16,5 +16,8 @@
   "devDependencies": {
     "electron": "^34.5.0",
     "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.0.0"
   }
 }

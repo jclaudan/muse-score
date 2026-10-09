@@ -1,5 +1,9 @@
 appId: com.midimusicxml.app
 productName: MIDI vers MusicXML
+publish:
+  provider: github
+  owner: jclaudan
+  repo: muse-score
 directories:
   output: release
 files:

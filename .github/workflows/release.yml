@@ -14,13 +14,20 @@ jobs:
         include:
           - os: windows-latest
             dist: dist:win
-            pattern: desktop/release/*.exe
+            files: |
+              desktop/release/*.exe
+              desktop/release/latest.yml
+              desktop/release/*.blockmap
           - os: macos-latest
             dist: dist:mac
-            pattern: desktop/release/*.dmg
+            files: |
+              desktop/release/*.dmg
+              desktop/release/latest-mac.yml
           - os: ubuntu-latest
             dist: dist:linux
-            pattern: desktop/release/*.AppImage
+            files: |
+              desktop/release/*.AppImage
+              desktop/release/latest-linux.yml
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +39,7 @@ jobs:
       - run: npm run ${{ matrix.dist }}
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.pattern }}
+          files: ${{ matrix.files }}
           draft: false
           prerelease: false
           generate_release_notes: true

@@ -13,6 +13,13 @@ Convertit des fichiers MIDI en MusicXML via MuseScore, en local et hors-ligne.
 
 Page [Releases](../../releases) : `.exe` (Windows), `.dmg` (macOS), `.AppImage` (Linux).
 
+## Mises à jour
+
+- **Windows / Linux** : automatiques. L'app vérifie les Releases GitHub au
+  démarrage, télécharge en arrière-plan et propose de redémarrer pour installer.
+- **macOS** : manuelles (télécharger le `.dmg`), car l'app n'est pas signée
+  Apple et Squirrel l'exige pour la MAJ auto.
+
 ## Installation macOS (app non signée Apple)
 
 L'application n'est pas notarisée par Apple : macOS la bloque au premier lancement.

@@ -84,8 +84,45 @@ function createWindow(url) {
     shell.openExternal(u);
     return { action: "deny" };
   });
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    win.show();
+    initAutoUpdate();
+  });
   win.loadURL(url);
+}
+
+// Mises à jour auto via les Releases GitHub (désactivé en dev).
+// macOS non signé : Squirrel exige une signature Apple, la MAJ auto
+// y est inactive (télécharger le .dmg à la main).
+function initAutoUpdate() {
+  if (!app.isPackaged) return;
+  let autoUpdater;
+  try {
+    ({ autoUpdater } = require("electron-updater"));
+  } catch (e) {
+    console.error("MAJ auto indisponible:", e.message);
+    return;
+  }
+  autoUpdater.autoDownload = true;
+  autoUpdater.on("update-downloaded", () => {
+    dialog
+      .showMessageBox({
+        type: "info",
+        buttons: ["Redémarrer", "Plus tard"],
+        title: "Mise à jour prête",
+        message:
+          "Une nouvelle version a été téléchargée. Redémarrer pour l'installer ?",
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+  autoUpdater.on("error", (e) =>
+    console.error("MAJ auto:", (e && e.message) || e),
+  );
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 15000);
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();

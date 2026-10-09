@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>MIDI → MusicXML</title>
+<style>
+:root{
+  --bg:#0b0f14; --panel:#121923; --panel2:#1a2433; --line:#2a3648;
+  --txt:#e9eff7; --muted:#93a1b5; --acc:#4ade80; --acc-ink:#05240f;
+  --warn:#fbbf24; --err:#f87171; --radius:14px;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;color:var(--txt);font-family:var(--font);
+  background:radial-gradient(900px 400px at 20% -5%,#12241a 0%,var(--bg) 55%) fixed,var(--bg);}
+.wrap{max-width:1024px;margin:0 auto;padding:24px 16px 72px}
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{width:46px;height:46px;flex:none;border-radius:13px;display:grid;place-items:center;
+  font-size:24px;font-weight:800;color:var(--acc-ink);
+  background:linear-gradient(135deg,var(--acc),#22d3ee)}
+h1{font-size:1.4rem;margin:0;line-height:1.2}
+h2.sec{font-size:.95rem;color:var(--muted);margin:26px 0 0;text-transform:uppercase;letter-spacing:.06em}
+.sub{margin:3px 0 0;color:var(--muted);font-size:.9rem}
+.pills{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pill{font-size:.75rem;font-weight:600;padding:5px 12px;border-radius:999px;
+  border:1px solid var(--line);color:var(--muted);background:var(--panel);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pill.ok{color:var(--acc);border-color:#1d4d2e}
+.pill.bad{color:var(--err);border-color:#7f1d1d}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px;margin-top:12px}
+.card h3{margin:0 0 10px;font-size:1rem}
+.muted{color:var(--muted);font-size:.85rem}
+#drop{display:block;border:2px dashed #3b4a60;border-radius:var(--radius);
+  padding:42px 16px;text-align:center;cursor:pointer;
+  transition:border-color .2s,background .2s}
+#drop:hover,#drop.over{border-color:var(--acc);background:#0e1f15}
+#drop:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+#drop .big{font-size:1.05rem;font-weight:700}
+#drop .small{color:var(--muted);font-size:.85rem;margin:6px 0 0}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center}
+button,select{font:inherit}
+button{font-weight:700;border:0;border-radius:10px;padding:10px 16px;min-height:44px;
+  cursor:pointer;background:var(--acc);color:var(--acc-ink)}
+button:hover{filter:brightness(1.08)}
+button:disabled{opacity:.45;cursor:wait}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{
+  outline:2px solid var(--acc);outline-offset:2px}
+button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+button.small{min-height:38px;padding:7px 12px;font-size:.82rem}
+button.danger{background:transparent;border:1px solid #7f1d1d;color:var(--err)}
+select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;min-height:44px;max-width:100%}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:.82rem;color:var(--muted);min-width:0}
+label.f input,label.f select{font-size:.9rem}
+input[type=text],input[type=password]{
+  background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;min-height:44px;width:100%}
+input::placeholder{color:#5b6a80}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0}
+.check{display:flex;align-items:center;gap:8px;font-size:.88rem;min-height:44px}
+.check input{width:18px;height:18px;accent-color:var(--acc)}
+.meta{color:var(--muted);font-size:.85rem;margin:10px 0 0;min-height:1.2em}
+#list{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;margin-top:10px}
+#empty{border:1px dashed var(--line);border-radius:var(--radius);padding:34px 16px;
+  text-align:center;color:var(--muted);margin-top:10px}
+#empty svg{opacity:.5}
+#empty p{margin:10px 0 0;font-size:.9rem}
+.file{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.file .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file .sz{color:var(--muted);font-size:.76rem}
+.badge{align-self:flex-start;font-size:.7rem;font-weight:800;padding:3px 10px;
+  border-radius:999px;text-transform:uppercase;letter-spacing:.05em}
+.b-wait{background:#223047;color:var(--muted)}
+.b-busy{background:#3a2f10;color:var(--warn)}
+.b-ok{background:#0d2b1a;color:var(--acc)}
+.b-err{background:#331414;color:var(--err)}
+.prog{height:4px;border-radius:4px;background:#223047;overflow:hidden;display:none}
+.busy .prog{display:block}
+.prog i{display:block;height:100%;width:40%;border-radius:4px;background:var(--acc);
+  animation:slide 1.1s linear infinite}
+@keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(280%)}}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+a.btn{display:inline-block;text-decoration:none;font-size:.82rem;font-weight:700;
+  padding:7px 12px;min-height:38px;line-height:24px;border-radius:9px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--acc)}
+.err-msg{color:var(--err);font-size:.78rem;word-break:break-word}
+.wf{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;
+  display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--panel)}
+.wf .grow{flex:1;min-width:200px}
+.wf .nm{font-weight:700}
+.wf .opts{color:var(--muted);font-size:.78rem;margin-top:3px}
+.run{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;background:var(--panel)}
+.run .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.run .dt{color:var(--muted);font-size:.78rem}
+.run ul{margin:8px 0;padding-left:20px;font-size:.86rem}
+.run li{margin:3px 0;word-break:break-word}
+.run a{color:var(--acc)}
+#toasts{position:fixed;top:12px;right:12px;display:flex;flex-direction:column;
+  gap:8px;z-index:50;max-width:min(92vw,360px)}
+.toast{background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--acc);
+  border-radius:10px;padding:10px 14px;font-size:.85rem;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.err{border-left-color:var(--err)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+footer{color:var(--muted);font-size:.78rem;margin-top:26px;line-height:1.7}
+footer code{background:#0e141d;padding:2px 6px;border-radius:6px}
+@media (max-width:560px){
+  .wrap{padding:16px 12px 56px}
+  h1{font-size:1.15rem}
+  #drop{padding:30px 12px}
+  .pills{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  .prog i{animation:none;width:100%}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo" aria-hidden="true">♪</div>
+    <div>
+      <h1>MIDI → MusicXML</h1>
+      <p class="sub">Conversion locale via MuseScore · workflows Soundslice</p>
+    </div>
+    <div class="pills">
+      <span id="pill-muse" class="pill">MuseScore…</span>
+      <span id="pill-slice" class="pill">Soundslice…</span>
+    </div>
+  </header>
+
+  <main>
+    <h2 class="sec">Fichiers</h2>
+    <section class="card" aria-label="Dépôt de fichiers">
+      <label id="drop" tabindex="0">
+        <div class="big">Dépose tes fichiers .mid / .midi ici</div>
+        <p class="small">ou touche Entrée / clique pour sélectionner — plusieurs fichiers acceptés</p>
+        <input id="input" type="file" accept=".mid,.midi,audio/midi" multiple hidden>
+      </label>
+      <div class="toolbar" role="toolbar" aria-label="Actions">
+        <button id="all">Tout convertir</button>
+        <button id="zip" class="ghost">Tout télécharger (.zip)</button>
+        <button id="clear" class="ghost danger">Effacer</button>
+      </div>
+      <p id="summary" class="meta" aria-live="polite"></p>
+    </section>
+    <div id="empty">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+      <p>Aucun fichier pour l'instant — dépose des MIDI ci-dessus.</p>
+    </div>
+    <div id="list"></div>
+
+    <h2 class="sec">Workflows</h2>
+    <section class="card" aria-label="Lancer un workflow">
+      <div class="toolbar" style="margin-top:0">
+        <label class="f" style="flex:1;min-width:200px">Workflow
+          <select id="wf-select"></select>
+        </label>
+        <button id="wf-run" style="align-self:end">Exécuter sur les fichiers</button>
+      </div>
+      <p class="muted" id="wf-hint">Crée ton premier workflow ci-dessous (ex : convertir + publier vers une liste Soundslice).</p>
+    </section>
+    <div id="wf-list"></div>
+    <section class="card" aria-label="Éditeur de workflow">
+      <h3 id="wf-form-title">Nouveau workflow</h3>
+      <div class="form-grid">
+        <label class="f">Nom *
+          <input type="text" id="wf-name" placeholder="Ex : Niveaux vers Soundslice" maxlength="100">
+        </label>
+        <label class="f">Artiste
+          <input type="text" id="wf-artist" placeholder="Optionnel" maxlength="255">
+        </label>
+        <label class="f">ID de liste Soundslice
+          <input type="text" id="wf-list" placeholder="Ex : 123 (optionnel)">
+        </label>
+        <label class="f">Embed
+          <select id="wf-embed">
+            <option value="">Désactivé</option>
+            <option value="2">Tous domaines</option>
+            <option value="4">Domaines autorisés</option>
+          </select>
+        </label>
+      </div>
+      <div class="toolbar" style="margin-top:0">
+        <label class="check"><input type="checkbox" id="wf-publish" checked> Publier vers Soundslice</label>
+        <label class="check"><input type="checkbox" id="wf-dry"> Dry-run (lister sans envoyer)</label>
+        <button id="wf-save">Enregistrer</button>
+        <button id="wf-cancel" class="ghost" hidden>Annuler</button>
+      </div>
+    </section>
+    <div id="recap"></div>
+
+    <h2 class="sec">Historique</h2>
+    <div id="runs"></div>
+
+    <h2 class="sec">Réglages</h2>
+    <section class="card" aria-label="Réglages Soundslice">
+      <h3>Clé API Soundslice</h3>
+      <p class="muted">Compte payant Teacher/Licensing requis, plus l'autorisation spéciale « Upload a slice's notation » (à demander à Soundslice). Stocké uniquement sur cet appareil (<span id="set-src"></span>).</p>
+      <div class="form-grid">
+        <label class="f">Application ID
+          <input type="text" id="set-id" autocomplete="off" placeholder="Ex : ab12cd">
+        </label>
+        <label class="f">Mot de passe de la clé
+          <input type="password" id="set-pw" autocomplete="new-password" placeholder="••••••••">
+        </label>
+      </div>
+      <div class="toolbar" style="margin-top:0">
+        <button id="set-save">Enregistrer</button>
+        <button id="set-test" class="ghost">Tester la connexion</button>
+        <button id="set-clear" class="ghost danger">Effacer</button>
+      </div>
+      <p class="meta" id="set-msg" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <footer>
+    API locale — <code>POST /convert</code> · <code>POST /convert-batch</code> ·
+    <code>POST /publish-soundslice</code> · <code>GET/POST /workflows</code> ·
+    <code>POST /workflows/:id/run</code>
+  </footer>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<div id="sr" class="sr-only" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const drop=$('drop'),input=$('input'),list=$('list'),empty=$('empty'),
+  summary=$('summary'),recapEl=$('recap'),sr=$('sr');
+const files=new Map();
+let soundslice=false,workflows=[],editingId=null,lastRun=null;
+
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():'id-'+Date.now()+'-'+Math.random().toString(16).slice(2);
+const fmtSize=b=>b<1024?b+' o':b<1048576?(b/1024).toFixed(1)+' Ko':(b/1048576).toFixed(1)+' Mo';
+const announce=m=>{sr.textContent=m;};
+function toast(msg,isErr){const t=document.createElement('div');t.className='toast'+(isErr?' err':'');t.textContent=msg;$('toasts').appendChild(t);setTimeout(()=>t.remove(),4500);}
+function setBusy(b){['all','zip','clear','wf-run','wf-save'].forEach(id=>{$(id).disabled=b;});}
+async function api(path,opts={}){
+  const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});
+  const t=await r.text();let j=null;try{j=JSON.parse(t);}catch(e){}
+  if(!r.ok)throw new Error(((j&&(j.details||j.error))||t||'erreur').slice(0,300));
+  return j;
+}
+const parseErr=t=>{try{const j=JSON.parse(t);return j.details||j.error||t;}catch(e){return t;}};
+
+/* ---------- santé ---------- */
+function refreshHealth(){
+  fetch('/health').then(r=>r.json()).then(h=>{
+    const pm=$('pill-muse'),ps=$('pill-slice');
+    pm.textContent=h.ok?'MuseScore OK':'MuseScore HS';
+    pm.className='pill '+(h.ok?'ok':'bad');pm.title=h.ok?h.binary:h.error;
+    ps.textContent=h.soundslice?'Soundslice OK':'Soundslice off';
+    ps.className='pill '+(h.soundslice?'ok':'');
+    soundslice=!!h.soundslice;render();
+  }).catch(()=>{const pm=$('pill-muse');pm.textContent='Serveur injoignable';pm.className='pill bad';});
+}
+
+/* ---------- fichiers ---------- */
+drop.addEventListener('click',()=>input.click());
+drop.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();input.click();}});
+['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
+input.addEventListener('change',()=>{addFiles(input.files);input.value='';});
+
+function addFiles(fl){
+  let n=0;const ids=[];
+  for(const f of fl){
+    if(!/\.(mid|midi)$/i.test(f.name))continue;
+    const id=uid();
+    files.set(id,{file:f,url:null,sliceUrl:null,state:'wait',label:'En attente',msg:''});
+    ids.push(id);n++;
+  }
+  if(!n){toast('Aucun .mid / .midi dans la sélection.',true);return;}
+  render();ids.forEach(convertOne);
+}
+
+function badge(e){
+  if(e.state==='ok')return '<span class="badge b-ok">OK</span>';
+  if(e.state==='err')return '<span class="badge b-err">Erreur</span>';
+  if(e.state==='busy')return `<span class="badge b-busy">${esc(e.label)}</span>`;
+  return '<span class="badge b-wait">En attente</span>';
+}
+
+function render(){
+  list.innerHTML='';
+  let count=0,ok=0,pub=0;
+  files.forEach((e,id)=>{
+    count++;if(e.state==='ok')ok++;if(e.sliceUrl)pub++;
+    const card=document.createElement('article');
+    card.className='file'+(e.state==='busy'?' busy':'');
+    let h=`<div class="nm" title="${esc(e.file.name)}">${esc(e.file.name)}</div>`;
+    h+=`<div class="sz">${esc(fmtSize(e.file.size))}</div>`+badge(e)+'<div class="prog"><i></i></div>';
+    if(e.state==='err'&&e.msg)h+=`<div class="err-msg">${esc(e.msg)}</div>`;
+    h+='<div class="actions">';
+    if(e.url)h+=`<a class="btn" href="${e.url}" download="${esc(e.file.name.replace(/\.(mid|midi)$/i,'.musicxml'))}">Télécharger</a>`;
+    if(e.sliceUrl)h+=`<a class="btn" target="_blank" rel="noopener" href="${esc(e.sliceUrl)}">Soundslice ↗</a>`;
+    else if(soundslice&&e.url)h+=`<button class="ghost small" data-act="pub">Publier</button>`;
+    if(e.state==='err')h+=`<button class="ghost small" data-act="retry">Réessayer</button>`;
+    h+=`<button class="danger small" data-act="rm">Retirer</button></div>`;
+    card.innerHTML=h;
+    card.querySelectorAll('button').forEach(b=>{
+      const act=b.getAttribute('data-act');
+      if(act==='pub')b.addEventListener('click',()=>publishOne(id));
+      else if(act==='retry')b.addEventListener('click',()=>retryOne(id));
+      else if(act==='rm')b.addEventListener('click',()=>removeOne(id));
+    });
+    list.appendChild(card);
+  });
+  empty.style.display=count?'none':'';
+  summary.textContent=count?`${count} fichier(s) · ${ok} converti(s)`+(soundslice?` · ${pub} publié(s)`:''):'';
+}
+
+function removeOne(id){const e=files.get(id);if(!e)return;if(e.url)URL.revokeObjectURL(e.url);files.delete(id);render();}
+function retryOne(id){const e=files.get(id);if(!e)return;if(e.url)URL.revokeObjectURL(e.url);e.url=null;e.sliceUrl=null;e.state='wait';e.msg='';render();convertOne(id);}
+
+function convertOne(id){
+  const e=files.get(id);if(!e||e.url||e.state==='busy')return;
+  e.state='busy';e.label='Conversion…';e.msg='';render();
+  const fd=new FormData();fd.append('file',e.file);
+  fetch('/convert',{method:'POST',body:fd}).then(r=>{
+    if(!r.ok)return r.text().then(t=>{throw new Error(parseErr(t).slice(0,300));});
+    return r.blob();
+  }).then(blob=>{
+    e.url=URL.createObjectURL(blob);e.state='ok';e.label='OK';announce(e.file.name+' converti.');
+  }).catch(err=>{e.state='err';e.msg=String(err.message||err);toast(e.file.name+' : '+e.msg,true);
+  }).then(render);
+}
+
+function publishOne(id){
+  const e=files.get(id);if(!e||e.sliceUrl||e.state==='busy')return;
+  e.state='busy';e.label='Envoi…';e.msg='';render();
+  const fd=new FormData();fd.append('file',e.file);
+  fetch('/publish-soundslice',{method:'POST',body:fd}).then(r=>r.text().then(t=>{
+    let j={};try{j=JSON.parse(t);}catch(e2){}
+    if(!r.ok)throw new Error(String(j.details||j.error||t||'erreur').slice(0,300));
+    return j;
+  })).then(j=>{
+    e.sliceUrl=j.url;e.state='ok';e.label='OK';announce(e.file.name+' publié.');
+  }).catch(err=>{e.state=e.url?'ok':'err';e.msg=String(err.message||err);if(!e.url)toast(e.file.name+' : '+e.msg,true);
+  }).then(render);
+}
+
+$('all').addEventListener('click',()=>{files.forEach((e,id)=>{if(!e.url&&e.state!=='busy')convertOne(id);});});
+$('clear').addEventListener('click',()=>{files.forEach(e=>{if(e.url)URL.revokeObjectURL(e.url);});files.clear();lastRun=null;render();renderRecap(null);});
+$('zip').addEventListener('click',()=>{
+  if(!files.size){toast("Ajoute d'abord des fichiers.",true);return;}
+  setBusy(true);
+  const fd=new FormData();files.forEach(e=>fd.append('files',e.file));
+  fetch('/convert-batch',{method:'POST',body:fd}).then(r=>{
+    if(!r.ok)return r.text().then(t=>{throw new Error(parseErr(t).slice(0,300));});
+    return r.blob();
+  }).then(blob=>{
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='musicxml.zip';a.click();
+  }).catch(err=>toast('ZIP : '+err.message,true)).then(()=>setBusy(false));
+});
+
+/* ---------- workflows ---------- */
+function wfOpts(w){
+  const o=[];
+  if(w.artist)o.push(esc(w.artist));
+  if(w.listId)o.push('liste '+esc(w.listId));
+  if(w.embedStatus)o.push('embed '+w.embedStatus);
+  o.push(w.publish?'publie':'conversion seule');
+  if(w.dryRun)o.push('dry-run');
+  return o.join(' · ');
+}
+async function loadWorkflows(){
+  try{workflows=await api('/workflows');}catch(e){workflows=[];toast('Workflows : '+e.message,true);}
+  const sel=$('wf-select');sel.innerHTML='';
+  workflows.forEach(w=>{const o=document.createElement('option');o.value=w.id;o.textContent=w.name;sel.appendChild(o);});
+  $('wf-hint').style.display=workflows.length?'none':'';
+  const box=$('wf-list');box.innerHTML='';
+  workflows.forEach(w=>{
+    const d=document.createElement('div');d.className='wf';
+    d.innerHTML=`<div class="grow"><div class="nm">${esc(w.name)}</div><div class="opts">${wfOpts(w)}</div></div>`;
+    const run=document.createElement('button');run.className='small';run.textContent='Exécuter';
+    run.addEventListener('click',()=>runWorkflow(w.id));
+    const edit=document.createElement('button');edit.className='ghost small';edit.textContent='Modifier';
+    edit.addEventListener('click',()=>startEdit(w.id));
+    const del=document.createElement('button');del.className='danger small';del.textContent='Supprimer';
+    del.addEventListener('click',async()=>{
+      if(!confirm(`Supprimer « ${w.name} » ?`))return;
+      try{await api('/workflows/'+w.id,{method:'DELETE'});toast('Workflow supprimé.');await loadWorkflows();}
+      catch(e){toast(e.message,true);}
+    });
+    d.append(run,edit,del);box.appendChild(d);
+  });
+}
+function readForm(){
+  return {
+    name:$('wf-name').value,
+    artist:$('wf-artist').value||undefined,
+    listId:$('wf-list').value||undefined,
+    embedStatus:$('wf-embed').value||undefined,
+    publish:$('wf-publish').checked,
+    dryRun:$('wf-dry').checked,
+  };
+}
+function fillForm(w){
+  $('wf-name').value=w.name||'';$('wf-artist').value=w.artist||'';
+  $('wf-list').value=w.listId||'';$('wf-embed').value=w.embedStatus?String(w.embedStatus):'';
+  $('wf-publish').checked=w.publish!==false;$('wf-dry').checked=w.dryRun===true;
+}
+function resetForm(){
+  editingId=null;fillForm({});$('wf-form-title').textContent='Nouveau workflow';$('wf-cancel').hidden=true;
+}
+function startEdit(id){
+  const w=workflows.find(x=>x.id===id);if(!w)return;
+  editingId=id;fillForm(w);
+  $('wf-form-title').textContent='Modifier : '+w.name;$('wf-cancel').hidden=false;
+  $('wf-form-title').scrollIntoView({block:'nearest'});
+}
+$('wf-save').addEventListener('click',async()=>{
+  try{
+    if(editingId){await api('/workflows/'+editingId,{method:'PUT',body:JSON.stringify(readForm())});toast('Workflow mis à jour.');}
+    else{await api('/workflows',{method:'POST',body:JSON.stringify(readForm())});toast('Workflow créé.');}
+    resetForm();await loadWorkflows();
+  }catch(e){toast(e.message,true);}
+});
+$('wf-cancel').addEventListener('click',resetForm);
+$('wf-run').addEventListener('click',()=>{const id=$('wf-select').value;if(!id){toast('Crée d\'abord un workflow.',true);return;}runWorkflow(id);});
+
+async function runWorkflow(id){
+  if(!files.size){toast("Ajoute d'abord des fichiers.",true);return;}
+  setBusy(true);
+  const fd=new FormData();files.forEach(e=>fd.append('files',e.file));
+  try{
+    const r=await fetch('/workflows/'+id+'/run',{method:'POST',body:fd});
+    const t=await r.text();let j=null;try{j=JSON.parse(t);}catch(e){}
+    if(!r.ok)throw new Error(parseErr(t).slice(0,300));
+    lastRun=j;
+    const byName=new Map();files.forEach(e=>byName.set(e.file.name,e));
+    (j.results||[]).forEach(res=>{const e=byName.get(res.file);if(e){if(res.url)e.sliceUrl=res.url;e.state='ok';e.label='OK';}});
+    (j.failures||[]).forEach(f=>{const e=byName.get(f.file);if(e){e.state='err';e.msg=String(f.reason).slice(0,300);}});
+    const okc=(j.results||[]).length,ko=(j.failures||[]).length;
+    toast(`Run terminé : ${okc} OK, ${ko} échec(s).`,ko>0);
+    announce(`Workflow terminé : ${okc} succès, ${ko} échecs.`);
+    await loadRuns();
+  }catch(e){toast('Run : '+e.message,true);}
+  setBusy(false);render();renderRecap(lastRun);
+}
+
+function renderRecap(run){
+  const d=recapEl;
+  if(!run){d.hidden=true;d.innerHTML='';return;}
+  d.hidden=false;
+  let h=`<h3>Récap — ${esc(run.workflowName)}${run.dryRun?' (dry-run)':''}</h3><ul>`;
+  (run.results||[]).forEach(r=>{
+    h+=r.url?`<li><a target="_blank" rel="noopener" href="${esc(r.url)}">${esc(r.title||r.file)}</a></li>`
+            :`<li>${esc(r.title||r.file)} (${esc(r.bytes||0)} o)</li>`;
+  });
+  (run.failures||[]).forEach(f=>{h+=`<li style="color:var(--err)">${esc(f.file)} : ${esc(f.reason)}</li>`;});
+  h+='</ul>';
+  if(run.listError)h+=`<p style="color:var(--err)">Liste : ${esc(run.listError)}</p>`;
+  d.innerHTML=h;
+  const b=document.createElement('button');b.className='ghost small';b.textContent='Télécharger récap (.json)';
+  b.addEventListener('click',()=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(run,null,2)],{type:'application/json'}));
+    a.download='soundslice_resultats.json';a.click();
+  });
+  d.appendChild(b);
+}
+
+/* ---------- historique ---------- */
+async function loadRuns(){
+  let runs=[];try{runs=await api('/runs');}catch(e){}
+  const box=$('runs');box.innerHTML=runs.length?'':'<p class="muted">Aucun run pour l\'instant.</p>';
+  runs.forEach(run=>{
+    const d=document.createElement('div');d.className='run';
+    const okc=(run.results||[]).length,ko=(run.failures||[]).length;
+    d.innerHTML=`<div class="hd"><strong>${esc(run.workflowName)}</strong>`+
+      `<span class="dt">${esc(new Date(run.at).toLocaleString())} · ${okc} OK / ${ko} échec${run.dryRun?' · dry-run':''}</span></div>`;
+    const b=document.createElement('button');b.className='ghost small';b.textContent='Récap JSON';
+    b.addEventListener('click',()=>{
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([JSON.stringify(run,null,2)],{type:'application/json'}));
+      a.download='run-'+run.id.slice(0,8)+'.json';a.click();
+    });
+    d.appendChild(b);box.appendChild(d);
+  });
+}
+
+/* ---------- réglages ---------- */
+async function loadSettings(){
+  try{
+    const s=await api('/settings');
+    $('set-src').textContent=s.source==='env'?'variables d\'environnement':s.source==='store'?'stockage local':'non configuré';
+    $('set-msg').textContent=s.configured?`Configuré (${s.appId}). Mot de passe jamais affiché.`:'Non configuré.';
+  }catch(e){$('set-msg').textContent='Réglages : '+e.message;}
+}
+$('set-save').addEventListener('click',async()=>{
+  const appId=$('set-id').value.trim(),pw=$('set-pw').value;
+  if(!appId||!pw){toast('Application ID et mot de passe requis.',true);return;}
+  try{
+    await api('/settings',{method:'POST',body:JSON.stringify({appId,password:pw})});
+    $('set-pw').value='';$('set-id').value='';
+    toast('Clé enregistrée sur cet appareil.');await loadSettings();refreshHealth();
+  }catch(e){toast(e.message,true);}
+});
+$('set-test').addEventListener('click',async()=>{
+  $('set-msg').textContent='Test en cours…';
+  try{
+    const r=await api('/settings/test',{method:'POST'});
+    $('set-msg').textContent=`Connexion OK (${r.slices} slice(s) sur le compte).`;
+  }catch(e){$('set-msg').textContent='Échec : '+e.message;}
+});
+$('set-clear').addEventListener('click',async()=>{
+  if(!confirm('Effacer la clé API stockée ?'))return;
+  try{await api('/settings',{method:'DELETE'});toast('Clé effacée.');await loadSettings();refreshHealth();}
+  catch(e){toast(e.message,true);}
+});
+
+/* ---------- init ---------- */
+refreshHealth();loadWorkflows();loadRuns();loadSettings();render();
+})();
+</script>
+</body>
+</html>

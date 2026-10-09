@@ -61,15 +61,36 @@ Prérequis (côté Soundslice) :
 2. Permission spéciale **"Upload a slice's notation"** à demander à Soundslice
    ([contact](https://www.soundslice.com/contact/)), sinon l'upload répond `403`.
 
-Configuration (jamais commité, `.env` ignoré par git) :
+Configuration (interface web → Réglages, ou variables d'environnement —
+jamais commité, `.env` ignoré par git) :
 
 ```sh
 SOUNDSLICE_APP_ID="ton_app_id"
 SOUNDSLICE_PASSWORD="ton_mot_de_passe"
 ```
 
+La clé peut aussi être saisie dans l'interface (section Réglages, bouton Tester
+la connexion). Elle est stockée uniquement sur l'appareil (`DATA_DIR`,
+fichier `store.json` en lecture restreinte) et n'est jamais renvoyée en clair
+par l'API (`GET /settings` ne retourne qu'un identifiant masqué).
+
 ```sh
 curl -F "file=@piece.mid" -F "name=Mon morceau" http://localhost:8000/publish-soundslice
+```
+
+## Workflows
+
+Un workflow = une configuration nommée et rejouable (conversion + publication
+optionnelle, artiste, liste, embed). Gérable depuis l'interface (section
+Workflows + Historique) ou l'API :
+
+```sh
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"Niveaux","listId":"123","embedStatus":4}' \
+  http://localhost:8000/workflows
+curl -F "files=@a.musicxml" -F "files=@b.mid" http://localhost:8000/workflows/<id>/run
+curl http://localhost:8000/workflows   # lister
+curl http://localhost:8000/runs        # historique des runs
 ```
 
 Envoi en lot (équivalent du script `soundslice_upload.py`) :

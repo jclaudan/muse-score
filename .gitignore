@@ -9,3 +9,4 @@ resources/bin/linux/
 *.log
 smoke-out.txt
 partitions-notes-silences/
+data/

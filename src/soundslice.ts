@@ -3,24 +3,22 @@
 // Prerequis : compte payant (Teacher/Licensing) + permission speciale
 // "Upload a slice's notation" (a demander a Soundslice, sinon 403).
 import { Buffer } from "node:buffer";
+import { getCredentials } from "./store.js";
 
 const API = "https://www.soundslice.com/api/v1";
 
 export function soundsliceConfigured(): boolean {
-  return !!(
-    process.env.SOUNDSLICE_APP_ID && process.env.SOUNDSLICE_PASSWORD
-  );
+  return getCredentials() !== null;
 }
 
 function auth(): string {
-  const id = process.env.SOUNDSLICE_APP_ID;
-  const pw = process.env.SOUNDSLICE_PASSWORD;
-  if (!id || !pw) {
+  const c = getCredentials();
+  if (!c) {
     throw new Error(
-      "Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD manquants)",
+      "Soundslice non configuré (réglages de l'interface ou variables SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD)",
     );
   }
-  return `Basic ${Buffer.from(`${id}:${pw}`).toString("base64")}`;
+  return `Basic ${Buffer.from(`${c.id}:${c.pw}`).toString("base64")}`;
 }
 
 async function api(
@@ -162,6 +160,15 @@ export async function publishMusicXml(
     url: json?.url ?? slice.url,
     embedUrl: json?.embed_url ?? slice.embedUrl,
   };
+}
+
+// Teste la clé : liste les slices du compte.
+export async function testConnection(): Promise<{ slices: number }> {
+  const { status, json } = await api("/slices/");
+  if (status !== 200 || !Array.isArray(json)) {
+    throwFor(status, json, "test de connexion");
+  }
+  return { slices: (json as unknown[]).length };
 }
 
 // Range les slices dans une liste du compte (les "dossiers" n'existent plus,

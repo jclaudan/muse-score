@@ -10,10 +10,26 @@ import {
   addSlicesToList,
   publishMusicXml,
   soundsliceConfigured,
+  testConnection,
   titleFromMusicXml,
 } from "./soundslice.js";
+import {
+  clearCredentials,
+  createWorkflow,
+  deleteWorkflow,
+  listRuns,
+  listWorkflows,
+  loadStore,
+  maskedSettings,
+  pushRun,
+  setCredentials,
+  updateWorkflow,
+  type RunRecord,
+} from "./store.js";
 
 const PORT = Number(process.env.PORT ?? 8000);
+
+await loadStore();
 
 const app = Fastify({ logger: true });
 await app.register(multipart, {
@@ -134,7 +150,8 @@ app.post("/convert-batch", async (req, reply) => {
 app.post("/publish-soundslice", async (req, reply) => {
   if (!soundsliceConfigured()) {
     return reply.code(503).send({
-      error: "Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD manquants)",
+      error:
+        "Soundslice non configuré (réglages de l'interface ou variables SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD)",
     });
   }
   let buf: Buffer | null = null;
@@ -238,7 +255,8 @@ app.post("/publish-soundslice-batch", async (req, reply) => {
 
   if (!soundsliceConfigured()) {
     return reply.code(503).send({
-      error: "Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD manquants)",
+      error:
+        "Soundslice non configuré (réglages de l'interface ou variables SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD)",
     });
   }
   const artist = (fields.artist ?? "").slice(0, 255);
@@ -314,125 +332,200 @@ app.post("/publish-soundslice-batch", async (req, reply) => {
   });
 });
 
-// UI drag & drop : http://localhost:8000/
-app.get("/", async (_, reply) => {
-  return reply.type("text/html").send(`<!doctype html>
-<html lang="fr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MIDI → MusicXML</title>
-<style>
-*{box-sizing:border-box}body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;background:#111;color:#eee}
-#drop{border:2px dashed #666;border-radius:12px;padding:3rem 1rem;text-align:center;cursor:pointer;transition:.2s}
-#drop.over{border-color:#4ade80;background:#14231a}
-.row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.5rem .75rem;background:#1c1c1c;border-radius:8px;margin-top:.5rem}
-button{background:#4ade80;border:0;border-radius:8px;padding:.5rem 1rem;font-weight:600;cursor:pointer}
-button.ghost{background:#333;color:#fff}
-a.dl{color:#4ade80}.err{color:#f87171}.ok{color:#4ade80}
-#bar{display:flex;gap:.5rem;margin:1rem 0;flex-wrap:wrap}
-#health{font-size:.85rem;opacity:.8}
-</style></head><body>
-<h1>MIDI → MusicXML</h1>
-<div id="health">Vérification MuseScore…</div>
-<div id="drop">Dépose tes fichiers <b>.mid / .midi</b> ici<br>ou clique pour sélectionner<input id="input" type="file" accept=".mid,.midi,audio/midi" multiple hidden></div>
-<div id="bar">
-<button id="all">Tout convertir</button>
-<button id="zip" class="ghost">Tout télécharger (.zip)</button>
-<button id="pub" class="ghost">Tout publier (Soundslice)</button>
-<button id="clear" class="ghost">Effacer</button>
-</div>
-<div id="list"></div>
-<div id="recap"></div>
-<script>
-const drop=document.getElementById('drop'),input=document.getElementById('input'),
-list=document.getElementById('list'),files=new Map();
-let soundslice=false;
-fetch('/health').then(r=>r.json()).then(h=>{
- document.getElementById('health').textContent=(h.ok?'MuseScore OK : '+h.binary:'ERREUR : '+h.error)+(h.soundslice?' | Soundslice OK':' | Soundslice non configuré');
- soundslice=!!h.soundslice;render();
+// --- Réglages Soundslice (stockés en local, jamais renvoyés en clair)
+app.get("/settings", async () => maskedSettings());
+
+app.post("/settings", async (req, reply) => {
+  const body = (await req.body) as any;
+  const appId = String(body?.appId ?? "").trim();
+  const password = String(body?.password ?? "");
+  if (!appId || !password) {
+    return reply
+      .code(400)
+      .send({ error: 'Champs "appId" et "password" requis' });
+  }
+  await setCredentials(appId, password);
+  return maskedSettings();
 });
-drop.onclick=()=>input.click();
-['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over')}));
-['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over')}));
-drop.addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
-input.onchange=()=>{addFiles(input.files);input.value=''};
-function addFiles(fl){for(const f of fl){if(!/\\.(mid|midi)$/i.test(f.name))continue;const id=crypto.randomUUID();files.set(id,{file:f,url:null,sliceUrl:null,status:'en attente'});render();convertOne(id);}}
-function render(){
- list.innerHTML='';
- for(const [id,e] of files){
-  const div=document.createElement('div');div.className='row';
-  div.innerHTML='<span>'+e.file.name+' — <b class="'+(e.status==='OK'?'ok':e.status.startsWith('erreur')?'err':'')+'">'+e.status+'</b></span>';
-  const s=document.createElement('span');
-  if(e.url){const a=document.createElement('a');a.href=e.url;a.download=e.file.name.replace(/\\.(mid|midi)$/i,'.musicxml');a.textContent='Télécharger .musicxml';a.className='dl';s.appendChild(a);s.appendChild(document.createTextNode(' '));}
-  if(e.sliceUrl){const a=document.createElement('a');a.href=e.sliceUrl;a.target='_blank';a.textContent='Ouvrir dans Soundslice';a.className='dl';s.appendChild(a);s.appendChild(document.createTextNode(' '));}
-  else if(soundslice&&e.url){const b=document.createElement('button');b.className='ghost';b.style.cssText='padding:.25rem .6rem;font-size:.85rem';b.textContent='Soundslice';b.onclick=()=>publishOne(id);s.appendChild(b);}
-  list.appendChild(div);div.appendChild(s);
- }
-}
- async function convertOne(id){
-  const e=files.get(id);if(!e||e.url)return;
-  e.status='conversion…';render();
-  const fd=new FormData();fd.append('file',e.file);
-  try{
-   const r=await fetch('/convert',{method:'POST',body:fd});
-   if(!r.ok){let msg=await r.text();try{const j=JSON.parse(msg);msg=j.details||j.error||msg;}catch{}throw new Error(msg.slice(0,300));}
-   const blob=await r.blob();
-   e.url=URL.createObjectURL(blob);e.status='OK';
-  }catch(err){e.status='erreur : '+err.message;console.error(err);}
-  render();
- }
- async function publishOne(id){
-  const e=files.get(id);if(!e||e.sliceUrl)return;
-  e.status='envoi Soundslice…';render();
-  const fd=new FormData();fd.append('file',e.file);
-  try{
-   const r=await fetch('/publish-soundslice',{method:'POST',body:fd});
-   const t=await r.text();let j={};try{j=JSON.parse(t);}catch{}
-   if(!r.ok)throw new Error(((j.details||j.error||t)||'erreur').slice(0,300));
-   e.sliceUrl=j.url;e.status='OK';
-  }catch(err){e.status='erreur : '+err.message;console.error(err);}
-  render();
- }
-document.getElementById('all').onclick=()=>{for(const [id,e] of files)if(!e.url&&e.status!=='conversion…')convertOne(id);};
-document.getElementById('clear').onclick=()=>{files.clear();render();};
-document.getElementById('zip').onclick=async()=>{
- if(!files.size)return;
- const fd=new FormData();for(const e of files.values())fd.append('files',e.file);
- const r=await fetch('/convert-batch',{method:'POST',body:fd});
- if(!r.ok){alert(await r.text());return;}
- const blob=await r.blob(),a=document.createElement('a');
- a.href=URL.createObjectURL(blob);a.download='musicxml.zip';a.click();
-};
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-let lastRecap=null;
-async function publishAll(){
- if(!soundslice){alert('Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD)');return;}
- if(!files.size)return;
- const fd=new FormData();for(const e of files.values())fd.append('files',e.file);
- try{
-  const r=await fetch('/publish-soundslice-batch',{method:'POST',body:fd});
-  const t=await r.text();let j={};try{j=JSON.parse(t);}catch{}
-  if(!r.ok)throw new Error(((j.details||j.error||t)||'erreur').slice(0,300));
-  lastRecap=j;
-  const byName=new Map();for(const e of files.values())byName.set(e.file.name,e);
-  for(const res of j.results||[]){const e=byName.get(res.file);if(e){e.sliceUrl=res.url;e.status='OK';}}
-  for(const f of j.failures||[]){const e=byName.get(f.file);if(e)e.status='erreur : '+String(f.reason).slice(0,200);}
- }catch(err){alert('Publication : '+err.message);}
- render();renderRecap();
-}
-function renderRecap(){
- const d=document.getElementById('recap');if(!lastRecap){d.innerHTML='';return;}
- let h='<h3>Récap Soundslice</h3><ul>';
- for(const r of lastRecap.results||[])h+='<li><a class="dl" target="_blank" href="'+esc(r.url)+'">'+esc(r.title)+'</a></li>';
- for(const f of lastRecap.failures||[])h+='<li class="err">'+esc(f.file)+' : '+esc(f.reason)+'</li>';
- h+='</ul>';
- if(lastRecap.listError)h+='<p class="err">Liste : '+esc(lastRecap.listError)+'</p>';
- d.innerHTML=h;
- const b=document.createElement('button');b.className='ghost';b.textContent='Télécharger récap (.json)';
- b.onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(lastRecap,null,2)],{type:'application/json'}));a.download='soundslice_resultats.json';a.click();};
- d.appendChild(b);
-}
-document.getElementById('pub').onclick=publishAll;
-</script></body></html>`);
+
+app.delete("/settings", async () => {
+  await clearCredentials();
+  return maskedSettings();
+});
+
+app.post("/settings/test", async (req, reply) => {
+  try {
+    const res = await testConnection();
+    return { ok: true, ...res };
+  } catch (e) {
+    return reply
+      .code(500)
+      .send({ ok: false, error: (e as Error).message });
+  }
+});
+
+// --- Workflows : conversion + publication configurables et rejouables
+app.get("/workflows", async () => listWorkflows());
+
+app.post("/workflows", async (req, reply) => {
+  try {
+    const wf = await createWorkflow(await req.body);
+    return reply.code(201).send(wf);
+  } catch (e) {
+    return reply.code(400).send({ error: (e as Error).message });
+  }
+});
+
+app.put("/workflows/:id", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  try {
+    const wf = await updateWorkflow(id, await req.body);
+    if (!wf) return reply.code(404).send({ error: "Workflow introuvable" });
+    return wf;
+  } catch (e) {
+    return reply.code(400).send({ error: (e as Error).message });
+  }
+});
+
+app.delete("/workflows/:id", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  if (!(await deleteWorkflow(id))) {
+    return reply.code(404).send({ error: "Workflow introuvable" });
+  }
+  return { deleted: true };
+});
+
+app.get("/runs", async () => listRuns());
+
+// POST /workflows/:id/run — champ "files" (mid/midi/musicxml) -> exécute le
+// workflow (conversion + publication optionnelle) -> récap + historique
+app.post("/workflows/:id/run", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const wf = listWorkflows().find((w) => w.id === id);
+  if (!wf) return reply.code(404).send({ error: "Workflow introuvable" });
+
+  const uploads: { filename: string; buf: Buffer }[] = [];
+  const fields: Record<string, string> = {};
+  for await (const part of req.parts()) {
+    if (part.type === "file") {
+      uploads.push({ filename: part.filename, buf: await part.toBuffer() });
+    } else {
+      fields[part.fieldname] =
+        typeof part.value === "string" ? part.value : String(part.value);
+    }
+  }
+  const valid = uploads.filter(
+    (u) =>
+      u.buf.length > 0 && /\.(mid|midi|musicxml|xml)$/i.test(u.filename),
+  );
+  if (valid.length === 0) {
+    return reply
+      .code(400)
+      .send({ error: 'Aucun .mid/.midi/.musicxml dans le champ "files"' });
+  }
+
+  const dryRun =
+    fields.dryRun !== undefined
+      ? fields.dryRun === "true" || fields.dryRun === "1"
+      : wf.dryRun;
+  const previewTitle = (u: { filename: string; buf: Buffer }): string => {
+    if (/\.(musicxml|xml)$/i.test(u.filename)) {
+      const t = titleFromMusicXml(u.buf);
+      if (t) return t;
+    }
+    return parse(u.filename).name.slice(0, 255) || "output";
+  };
+
+  if (dryRun) {
+    const record = await pushRun({
+      workflowId: wf.id,
+      workflowName: wf.name,
+      dryRun: true,
+      results: [],
+      failures: [],
+    });
+    return reply.send({
+      ...record,
+      items: valid.map((u) => ({ file: u.filename, title: previewTitle(u) })),
+    });
+  }
+
+  let bin: string | null = null;
+  if (valid.some((u) => /\.(mid|midi)$/i.test(u.filename))) {
+    try {
+      bin = await resolveBinary();
+    } catch (e) {
+      return reply.code(500).send({ error: (e as Error).message });
+    }
+  }
+  if (wf.publish && !soundsliceConfigured()) {
+    return reply.code(503).send({
+      error:
+        "Soundslice non configuré (réglages de l'interface ou variables SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD)",
+    });
+  }
+
+  const results: RunRecord["results"] = [];
+  const failures: { file: string; reason: string }[] = [];
+  for (const u of valid) {
+    try {
+      let xml: Buffer;
+      if (/\.(musicxml|xml)$/i.test(u.filename)) {
+        xml = u.buf;
+      } else {
+        const tmp = await mkdtemp(join(tmpdir(), "mscore-"));
+        await writeFile(join(tmp, "input.mid"), u.buf);
+        const outPath = join(tmp, "output.musicxml");
+        await convertMidiToMusicxml(bin as string, join(tmp, "input.mid"), outPath);
+        xml = await readFile(outPath);
+      }
+      const title = titleFromMusicXml(xml) ?? previewTitle(u);
+      if (!wf.publish) {
+        results.push({ file: u.filename, title, bytes: xml.length });
+        continue;
+      }
+      const pub = await publishMusicXml({
+        name: title,
+        artist: wf.artist,
+        embedStatus: wf.embedStatus,
+        xml,
+      });
+      results.push({ file: u.filename, title, bytes: xml.length, ...pub });
+    } catch (e) {
+      req.log.error({ file: u.filename, e });
+      failures.push({ file: u.filename, reason: (e as Error).message });
+    }
+  }
+
+  let listError: string | undefined;
+  if (wf.listId && results.some((r) => r.scorehash)) {
+    try {
+      await addSlicesToList(
+        wf.listId,
+        results.map((r) => r.scorehash as string),
+      );
+    } catch (e) {
+      listError = (e as Error).message;
+    }
+  }
+
+  const record = await pushRun({
+    workflowId: wf.id,
+    workflowName: wf.name,
+    dryRun: false,
+    results,
+    failures,
+    ...(listError ? { listError } : {}),
+  });
+  return reply.send(record);
+});
+
+// UI : http://localhost:8000/ (page servie depuis src/ui.html, copiée vers dist/ au build)
+const UI_PATH = new URL("./ui.html", import.meta.url);
+let uiCache: string | null = null;
+app.get("/", async (_, reply) => {
+  if (!uiCache) uiCache = await readFile(UI_PATH, "utf-8");
+  return reply.type("text/html").send(uiCache);
 });
 
 await app.listen({ port: PORT, host: "0.0.0.0" });

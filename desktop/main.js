@@ -7,6 +7,14 @@ const { pathToFileURL } = require("node:url");
 const isDev = !app.isPackaged;
 app.setName("MIDI vers MusicXML");
 
+// Données persistantes (réglages, workflows) : dossier utilisateur en paquet,
+// ./data en dev (défaut du serveur).
+if (app.isPackaged && !process.env.DATA_DIR) {
+  try {
+    process.env.DATA_DIR = path.join(app.getPath("userData"), "data");
+  } catch {}
+}
+
 function backendPath() {
   if (isDev) return path.join(__dirname, "..", "dist", "server.js");
   return path.join(process.resourcesPath, "backend", "server.js");

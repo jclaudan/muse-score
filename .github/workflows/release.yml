@@ -9,6 +9,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -34,3 +35,4 @@ jobs:
           files: ${{ matrix.pattern }}
           draft: false
           prerelease: false
+          generate_release_notes: true

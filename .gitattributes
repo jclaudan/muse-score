@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.exe binary
+*.dmg binary
+*.AppImage binary
+*.msi binary
+*.mid binary
+*.midi binary

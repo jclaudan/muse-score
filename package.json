@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "type": "module",
   "description": "API upload MIDI -> MusicXML via MuseScore CLI",
+  "author": "jclaudan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jclaudan/muse-score.git"
+  },
+  "homepage": "https://github.com/jclaudan/muse-score",
+  "bugs": "https://github.com/jclaudan/muse-score/issues",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
@@ -10,7 +18,8 @@
     "binaries": "node scripts/download-musescore.mjs",
     "desktop:dev": "npm run build && npm --prefix desktop install && npm --prefix desktop start",
     "dist:win": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:win",
-    "dist:mac": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:mac"
+    "dist:mac": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:mac",
+    "dist:linux": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:linux"
   },
   "dependencies": {
     "@fastify/multipart": "^9.0.0",

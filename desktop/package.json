@@ -2,12 +2,15 @@
   "name": "midi-musicxml-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "App desktop MIDI -> MusicXML (Win11 + macOS)",
+  "description": "App desktop MIDI -> MusicXML (Windows, macOS, Linux)",
+  "author": "jclaudan",
+  "license": "MIT",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dist:win": "electron-builder --win --x64 --publish never",
-    "dist:mac": "electron-builder --mac --publish never"
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "devDependencies": {
     "electron": "^34.5.0",

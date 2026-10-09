@@ -1,0 +1,36 @@
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            dist: dist:win
+            pattern: desktop/release/*.exe
+          - os: macos-latest
+            dist: dist:mac
+            pattern: desktop/release/*.dmg
+          - os: ubuntu-latest
+            dist: dist:linux
+            pattern: desktop/release/*.AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run binaries
+      - run: npm run ${{ matrix.dist }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.pattern }}
+          draft: false
+          prerelease: false

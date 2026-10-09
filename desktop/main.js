@@ -21,7 +21,7 @@ function musescoreBin() {
     return path.join(res, "bin", "win-x64", "bin", "MuseScore4.exe");
   if (process.platform === "darwin")
     return path.join(res, "bin", "mac", "app.app", "Contents", "MacOS", "mscore");
-  return path.join(res, "bin", "mscore-wrapper");
+  return path.join(res, "bin", "linux", "bin", "mscore4portable");
 }
 
 function findPort(start, tries = 20) {

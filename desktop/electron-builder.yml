@@ -27,3 +27,7 @@ mac:
   target:
     - dmg
     - zip
+linux:
+  category: AudioVideo
+  target:
+    - AppImage

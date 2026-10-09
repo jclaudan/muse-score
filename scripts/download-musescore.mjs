@@ -112,7 +112,22 @@ if (process.platform === "win32") {
   await rm(mnt, { recursive: true, force: true });
   console.log("OK:", join(OUT, "app.app", "Contents", "MacOS", "mscore"));
 } else {
-  console.log("Docker/Linux : binaire deja fourni par l'image (voir Dockerfile). Rien a faire.");
+  // Linux : AppImage extraite (meme methode que le Dockerfile).
+  // Sur desktop Linux un ecran est present : pas besoin de xvfb.
+  const APPIMAGE_URL =
+    process.env.MUSESCORE_APPIMAGE ??
+    "https://cdn.jsdelivr.net/musescore/v4.4.1/MuseScore-Studio-4.4.1.242490810-x86_64.AppImage";
+  await mkdir(OUT, { recursive: true });
+  const img = join(OUT, "_dl.AppImage");
+  const root = join(OUT, "squashfs-root");
+  await download(APPIMAGE_URL, img);
+  await execAsync("chmod", ["+x", img]);
+  await rm(root, { recursive: true, force: true });
+  await execAsync(img, ["--appimage-extract"], { cwd: OUT });
+  await execAsync("sh", ["-c", "cp -a squashfs-root/. ."], { cwd: OUT });
+  await rm(img, { force: true });
+  await rm(root, { recursive: true, force: true });
+  console.log("OK:", join(OUT, "bin", "mscore4portable"));
 }
 
 if (!existsSync(OUT)) console.log("Rien telecharge.");

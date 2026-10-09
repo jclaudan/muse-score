@@ -13,6 +13,7 @@
   "bugs": "https://github.com/jclaudan/muse-score/issues",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "prebuild": "node scripts/clean.mjs",
     "build": "tsc && node scripts/copy-ui.mjs",
     "start": "node dist/server.js",
     "binaries": "node scripts/download-musescore.mjs",

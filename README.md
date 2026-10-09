@@ -119,6 +119,23 @@ docker compose up --build -d
 
 Voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Architecture
+
+Hexagonale (ports & adapters), par module :
+
+```
+src/
+  core/       domaine : erreurs, modèle, ports (interfaces), use-cases, titres
+  adapters/   MuseScore CLI, Soundslice HTTP, store JSON local
+  http/       Fastify : une route par ressource + mapping erreurs -> statuts
+  app.ts      racine de composition (câblage, seul endroit modifiable
+              pour changer d'implémentation)
+  server.ts   bootstrap (écoute)
+```
+
+Patterns : ports & adapters, injection de dépendances (câblage manuel),
+use-cases, repository, façade (JsonFileStore), factory (`buildApp`).
+
 ## Soutenir
 
 Un bouton « Soutenir » (lien Stripe) s'affiche dans le pied de page quand

@@ -48,6 +48,32 @@ curl -F "file=@piece.mid" http://localhost:8000/convert -o piece.musicxml
 curl -F "files=@a.mid" -F "files=@b.mid" http://localhost:8000/convert-batch -o out.zip
 ```
 
+## Soundslice (optionnel)
+
+Envoi direct d'un fichier vers ton compte Soundslice (`POST /publish-soundslice`,
+champ `file` `.mid/.midi/.musicxml`, `name`/`artist` optionnels → `{ scorehash, url }`).
+L'interface affiche un bouton **Soundslice** par fichier quand c'est configuré
+(voir `GET /health` → champ `soundslice`).
+
+Prérequis (côté Soundslice) :
+
+1. Compte payant **Teacher** ou **Licensing** (seuls ces plans ont une clé API : app ID + mot de passe).
+2. Permission spéciale **"Upload a slice's notation"** à demander à Soundslice
+   ([contact](https://www.soundslice.com/contact/)), sinon l'upload répond `403`.
+
+Configuration (jamais commité, `.env` ignoré par git) :
+
+```sh
+SOUNDSLICE_APP_ID="ton_app_id"
+SOUNDSLICE_PASSWORD="ton_mot_de_passe"
+```
+
+```sh
+curl -F "file=@piece.mid" -F "name=Mon morceau" http://localhost:8000/publish-soundslice
+```
+
+Docs API : <https://www.soundslice.com/help/data-api/>
+
 ## Docker
 
 ```sh

@@ -2,100 +2,16 @@ import "dotenv/config";
 import Fastify from "fastify";
 import multipart from "@fastify/multipart";
 import archiver from "archiver";
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
-import { promisify } from "node:util";
+import { convertMidiToMusicxml, resolveBinary } from "./musescore.js";
+import {
+  publishMusicXml,
+  soundsliceConfigured,
+} from "./soundslice.js";
 
-const execFileAsync = promisify(execFile);
 const PORT = Number(process.env.PORT ?? 8000);
-const MUSESCORE_BIN =
-  process.env.MUSESCORE_BIN ??
-  (process.platform === "win32"
-    ? "C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe"
-    : "mscore");
-
-// Candidats si MUSESCORE_BIN n'existe pas / n'est pas dans le PATH
-const CANDIDATES =
-  process.platform === "win32"
-    ? [
-        MUSESCORE_BIN,
-        "C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe",
-        "mscore.exe",
-        "MuseScore4.exe",
-      ]
-    : [
-        MUSESCORE_BIN,
-        "/usr/local/bin/mscore-wrapper",
-        "/opt/mscore/bin/mscore4portable",
-        "mscore",
-        "musescore",
-        "MuseScore4",
-      ];
-
-function qtEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    QT_QPA_PLATFORM: process.env.QT_QPA_PLATFORM ?? "offscreen",
-    XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR ?? "/tmp/runtime-root",
-  };
-}
-
-// Bruit QML normal de MuseScore 4 — pas une erreur
-function cleanStderr(stderr: string): string {
-  return stderr
-    .split("\n")
-    .filter(
-      (l) =>
-        l.trim() &&
-        !l.includes("qt.qml.typeregistration") &&
-        !l.includes("XDG_RUNTIME_DIR"),
-    )
-    .join("\n");
-}
-
-async function resolveBinary(): Promise<string> {
-  for (const bin of CANDIDATES) {
-    try {
-      await execFileAsync(bin, ["--version"], { env: qtEnv() });
-      return bin;
-    } catch {
-      // essayer le suivant
-    }
-  }
-  throw new Error(
-    `MuseScore introuvable. Installe MuseScore 4 puis définis MUSESCORE_BIN (actuel: ${MUSESCORE_BIN})`,
-  );
-}
-
-async function convertMidiToMusicxml(
-  bin: string,
-  inputPath: string,
-  outputPath: string,
-): Promise<void> {
-  // Équivalent CLI : mscore -o sortie.musicxml entree.mid
-  try {
-    await execFileAsync(bin, ["-o", outputPath, inputPath], {
-      timeout: 120_000,
-      env: qtEnv(),
-    });
-  } catch (e: any) {
-    // MuseScore écrit ses warnings QML sur stderr même en cas de succès.
-    // Si le fichier de sortie existe et n'est pas vide, on considère que c'est OK.
-    try {
-      const st = await stat(outputPath);
-      if (st.size > 0) return;
-    } catch {
-      // pas de sortie -> vraie erreur, voir ci-dessous
-    }
-    const stderr: string = String(e?.stderr ?? e?.message ?? e);
-    const useful = cleanStderr(stderr).slice(-2000) || "pas de détail stderr";
-    throw new Error(
-      `MuseScore exit=${e?.code ?? "?"} : ${useful}`,
-    );
-  }
-}
 
 const app = Fastify({ logger: true });
 await app.register(multipart, {
@@ -105,9 +21,13 @@ await app.register(multipart, {
 app.get("/health", async () => {
   try {
     const bin = await resolveBinary();
-    return { ok: true, binary: bin };
+    return { ok: true, binary: bin, soundslice: soundsliceConfigured() };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return {
+      ok: false,
+      error: (e as Error).message,
+      soundslice: soundsliceConfigured(),
+    };
   }
 });
 
@@ -207,6 +127,69 @@ app.post("/convert-batch", async (req, reply) => {
   await archive.finalize();
 });
 
+// POST /publish-soundslice — .mid/.midi/.musicxml (champ "file", + "name"/"artist"
+// optionnels) -> convertit si besoin puis publie sur Soundslice -> { scorehash, url }
+app.post("/publish-soundslice", async (req, reply) => {
+  if (!soundsliceConfigured()) {
+    return reply.code(503).send({
+      error: "Soundslice non configuré (SOUNDSLICE_APP_ID / SOUNDSLICE_PASSWORD manquants)",
+    });
+  }
+  let buf: Buffer | null = null;
+  let filename = "output";
+  const fields: Record<string, string> = {};
+  for await (const part of req.parts()) {
+    if (part.type === "file") {
+      buf = await part.toBuffer();
+      filename = part.filename;
+    } else {
+      fields[part.fieldname] =
+        typeof part.value === "string" ? part.value : String(part.value);
+    }
+  }
+  if (!buf || buf.length === 0) {
+    return reply.code(400).send({ error: 'Champ "file" manquant ou vide' });
+  }
+
+  const base =
+    (fields.name ||
+      parse(filename).name.replace(/[^\w-]+/g, "_").slice(0, 80) ||
+      "output").slice(0, 255);
+  const artist = (fields.artist ?? "").slice(0, 255);
+  const isMidi = /\.(mid|midi)$/i.test(filename);
+  const isXml = /\.(musicxml|xml)$/i.test(filename);
+  if (!isMidi && !isXml) {
+    return reply
+      .code(400)
+      .send({ error: "Fichier .mid / .midi / .musicxml attendu" });
+  }
+
+  try {
+    let xml: Buffer;
+    if (isXml) {
+      xml = buf;
+    } else {
+      const bin = await resolveBinary().catch((e) => {
+        reply.code(500);
+        throw e;
+      });
+      const tmp = await mkdtemp(join(tmpdir(), "mscore-"));
+      const inPath = join(tmp, "input.mid");
+      const outPath = join(tmp, "output.musicxml");
+      await writeFile(inPath, buf);
+      await convertMidiToMusicxml(bin, inPath, outPath);
+      xml = await readFile(outPath);
+    }
+    const res = await publishMusicXml({ name: base, artist, xml });
+    return reply.send(res);
+  } catch (e) {
+    req.log.error(e);
+    return reply
+      .code(500)
+      .send({ error: "Échec publication Soundslice", details: (e as Error).message });
+  }
+});
+
 // UI drag & drop : http://localhost:8000/
 app.get("/", async (_, reply) => {
   return reply.type("text/html").send(`<!doctype html>
@@ -236,22 +219,26 @@ a.dl{color:#4ade80}.err{color:#f87171}.ok{color:#4ade80}
 <script>
 const drop=document.getElementById('drop'),input=document.getElementById('input'),
 list=document.getElementById('list'),files=new Map();
+let soundslice=false;
 fetch('/health').then(r=>r.json()).then(h=>{
- document.getElementById('health').textContent=h.ok?'MuseScore OK : '+h.binary:'ERREUR : '+h.error;
+ document.getElementById('health').textContent=(h.ok?'MuseScore OK : '+h.binary:'ERREUR : '+h.error)+(h.soundslice?' | Soundslice OK':' | Soundslice non configuré');
+ soundslice=!!h.soundslice;render();
 });
 drop.onclick=()=>input.click();
 ['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over')}));
 ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over')}));
 drop.addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 input.onchange=()=>{addFiles(input.files);input.value=''};
-function addFiles(fl){for(const f of fl){if(!/\\.(mid|midi)$/i.test(f.name))continue;const id=crypto.randomUUID();files.set(id,{file:f,url:null,status:'en attente'});render();convertOne(id);}}
+function addFiles(fl){for(const f of fl){if(!/\\.(mid|midi)$/i.test(f.name))continue;const id=crypto.randomUUID();files.set(id,{file:f,url:null,sliceUrl:null,status:'en attente'});render();convertOne(id);}}
 function render(){
  list.innerHTML='';
  for(const [id,e] of files){
   const div=document.createElement('div');div.className='row';
   div.innerHTML='<span>'+e.file.name+' — <b class="'+(e.status==='OK'?'ok':e.status.startsWith('erreur')?'err':'')+'">'+e.status+'</b></span>';
   const s=document.createElement('span');
-  if(e.url){const a=document.createElement('a');a.href=e.url;a.download=e.file.name.replace(/\\.(mid|midi)$/i,'.musicxml');a.textContent='Télécharger .musicxml';a.className='dl';s.appendChild(a);}
+  if(e.url){const a=document.createElement('a');a.href=e.url;a.download=e.file.name.replace(/\\.(mid|midi)$/i,'.musicxml');a.textContent='Télécharger .musicxml';a.className='dl';s.appendChild(a);s.appendChild(document.createTextNode(' '));}
+  if(e.sliceUrl){const a=document.createElement('a');a.href=e.sliceUrl;a.target='_blank';a.textContent='Ouvrir dans Soundslice';a.className='dl';s.appendChild(a);s.appendChild(document.createTextNode(' '));}
+  else if(soundslice&&e.url){const b=document.createElement('button');b.className='ghost';b.style.cssText='padding:.25rem .6rem;font-size:.85rem';b.textContent='Soundslice';b.onclick=()=>publishOne(id);s.appendChild(b);}
   list.appendChild(div);div.appendChild(s);
  }
 }
@@ -264,6 +251,18 @@ function render(){
    if(!r.ok){let msg=await r.text();try{const j=JSON.parse(msg);msg=j.details||j.error||msg;}catch{}throw new Error(msg.slice(0,300));}
    const blob=await r.blob();
    e.url=URL.createObjectURL(blob);e.status='OK';
+  }catch(err){e.status='erreur : '+err.message;console.error(err);}
+  render();
+ }
+ async function publishOne(id){
+  const e=files.get(id);if(!e||e.sliceUrl)return;
+  e.status='envoi Soundslice…';render();
+  const fd=new FormData();fd.append('file',e.file);
+  try{
+   const r=await fetch('/publish-soundslice',{method:'POST',body:fd});
+   const t=await r.text();let j={};try{j=JSON.parse(t);}catch{}
+   if(!r.ok)throw new Error(((j.details||j.error||t)||'erreur').slice(0,300));
+   e.sliceUrl=j.url;e.status='OK';
   }catch(err){e.status='erreur : '+err.message;console.error(err);}
   render();
  }

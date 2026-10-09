@@ -7,3 +7,5 @@ services:
       PORT: "8000"
       MUSESCORE_BIN: /usr/local/bin/mscore-wrapper
       QT_QPA_PLATFORM: offscreen
+      SOUNDSLICE_APP_ID: ${SOUNDSLICE_APP_ID:-}
+      SOUNDSLICE_PASSWORD: ${SOUNDSLICE_PASSWORD:-}

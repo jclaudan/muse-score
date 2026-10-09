@@ -1,0 +1,11 @@
+node_modules/
+dist/
+desktop/node_modules/
+desktop/release/
+resources/bin/win-x64/
+resources/bin/mac/
+resources/bin/linux/
+.env
+*.log
+smoke-out.txt
+partitions-notes-silences/

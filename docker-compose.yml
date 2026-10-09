@@ -1,0 +1,9 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      MUSESCORE_BIN: /usr/local/bin/mscore-wrapper
+      QT_QPA_PLATFORM: offscreen

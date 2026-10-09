@@ -1,0 +1,29 @@
+appId: com.midimusicxml.app
+productName: MIDI vers MusicXML
+directories:
+  output: release
+files:
+  - main.js
+  - preload.js
+  - package.json
+extraResources:
+  - from: ../dist
+    to: backend
+  - from: backend-package.json
+    to: backend/package.json
+  - from: ../node_modules
+    to: backend/node_modules
+  - from: ../resources/bin
+    to: bin
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  category: public.app-category.music
+  target:
+    - dmg
+    - zip

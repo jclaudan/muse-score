@@ -1,0 +1,31 @@
+{
+  "name": "musescore-midi-to-musicxml-api",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "API upload MIDI -> MusicXML via MuseScore CLI",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "binaries": "node scripts/download-musescore.mjs",
+    "desktop:dev": "npm run build && npm --prefix desktop install && npm --prefix desktop start",
+    "dist:win": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:win",
+    "dist:mac": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:mac"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^9.0.0",
+    "archiver": "^7.0.1",
+    "dotenv": "^18.0.6",
+    "fastify": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^24.0.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

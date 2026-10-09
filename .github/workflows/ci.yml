@@ -15,3 +15,7 @@ jobs:
       - run: node --check desktop/preload.js
       - run: node --check scripts/download-musescore.mjs
       - run: npm run build
+      - run: node desktop/test-main.js
+        env:
+          TEST_PORT: "8123"
+          DATA_DIR: /tmp/ci-data

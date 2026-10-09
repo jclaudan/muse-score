@@ -50,6 +50,7 @@ async function waitHealth(url, timeoutMs = 45000) {
   for (;;) {
     try {
       const r = await fetch(`${url}/health`);
+      await r.arrayBuffer().catch(() => {});
       if (r.ok) return;
     } catch {
       // pas encore pret
@@ -75,12 +76,15 @@ function createWindow(url) {
     width: 960,
     height: 760,
     autoHideMenuBar: true,
+    show: false,
+    backgroundColor: "#0b0f14",
     webPreferences: { preload: path.join(__dirname, "preload.js") },
   });
-  win.setWindowOpenHandler(({ url: u }) => {
+  win.webContents.setWindowOpenHandler(({ url: u }) => {
     shell.openExternal(u);
     return { action: "deny" };
   });
+  win.once("ready-to-show", () => win.show());
   win.loadURL(url);
 }
 

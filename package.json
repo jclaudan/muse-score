@@ -17,6 +17,7 @@
     "build": "tsc && node scripts/copy-ui.mjs",
     "start": "node dist/server.js",
     "binaries": "node scripts/download-musescore.mjs",
+    "test:main": "node desktop/test-main.js",
     "desktop:dev": "npm run build && npm --prefix desktop install && npm --prefix desktop start",
     "dist:win": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:win",
     "dist:mac": "npm run build && npm --prefix desktop install && npm --prefix desktop run dist:mac",

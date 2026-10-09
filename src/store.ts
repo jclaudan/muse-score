@@ -36,7 +36,7 @@ export interface RunRecord {
 }
 
 interface StoreData {
-  settings: { appId: string; password: string };
+  settings: { appId: string; password: string; donateUrl: string };
   workflows: Workflow[];
   runs: RunRecord[];
 }
@@ -48,7 +48,11 @@ const MAX_RUNS = 10;
 let cache: StoreData | null = null;
 
 function blank(): StoreData {
-  return { settings: { appId: "", password: "" }, workflows: [], runs: [] };
+  return {
+    settings: { appId: "", password: "", donateUrl: "" },
+    workflows: [],
+    runs: [],
+  };
 }
 
 export async function loadStore(): Promise<StoreData> {
@@ -64,6 +68,7 @@ export async function loadStore(): Promise<StoreData> {
       settings: {
         appId: parsed.settings?.appId ?? "",
         password: parsed.settings?.password ?? "",
+        donateUrl: parsed.settings?.donateUrl ?? "",
       },
       workflows: Array.isArray(parsed.workflows) ? parsed.workflows : [],
       runs: Array.isArray(parsed.runs) ? parsed.runs : [],
@@ -111,27 +116,55 @@ export function maskedSettings(): {
   configured: boolean;
   source: "env" | "store" | null;
   appId: string;
+  donateUrl: string;
 } {
   const src = credentialSource();
   const id =
     src === "env"
       ? (process.env.SOUNDSLICE_APP_ID as string)
       : (cache?.settings.appId ?? "");
-  return { configured: src !== null, source: src, appId: src ? mask(id) : "" };
+  return {
+    configured: src !== null,
+    source: src,
+    appId: src ? mask(id) : "",
+    donateUrl: donateUrl(),
+  };
+}
+
+export function donateUrl(): string {
+  const env = (process.env.DONATE_URL ?? "").trim();
+  if (env) return env;
+  return cache?.settings.donateUrl ?? "";
 }
 
 export async function setCredentials(
   appId: string,
   password: string,
+  donateUrl?: string,
 ): Promise<void> {
   const s = store();
-  s.settings = { appId: appId.trim(), password };
+  s.settings = {
+    appId: appId.trim(),
+    password,
+    donateUrl:
+      donateUrl !== undefined
+        ? validateUrl(donateUrl)
+        : (s.settings.donateUrl ?? ""),
+  };
   await saveStore();
+}
+
+function validateUrl(u: string): string {
+  const v = u.trim();
+  if (v && !/^https?:\/\//i.test(v)) {
+    throw new Error('Lien de don invalide (doit commencer par http(s)://)');
+  }
+  return v.slice(0, 500);
 }
 
 export async function clearCredentials(): Promise<void> {
   const s = store();
-  s.settings = { appId: "", password: "" };
+  s.settings = { appId: "", password: "", donateUrl: s.settings.donateUrl ?? "" };
   await saveStore();
 }
 

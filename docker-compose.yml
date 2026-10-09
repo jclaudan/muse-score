@@ -10,5 +10,6 @@ services:
       DATA_DIR: /app/data
       SOUNDSLICE_APP_ID: ${SOUNDSLICE_APP_ID:-}
       SOUNDSLICE_PASSWORD: ${SOUNDSLICE_PASSWORD:-}
+      DONATE_URL: ${DONATE_URL:-}
     volumes:
       - ./data:/app/data

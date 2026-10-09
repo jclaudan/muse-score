@@ -207,6 +207,9 @@ footer code{background:#0e141d;padding:2px 6px;border-radius:6px}
         <label class="f">Mot de passe de la clé
           <input type="password" id="set-pw" autocomplete="new-password" placeholder="••••••••">
         </label>
+        <label class="f">Lien de don (Stripe, optionnel)
+          <input type="text" id="set-donate" autocomplete="off" placeholder="https://buy.stripe.com/…">
+        </label>
       </div>
       <div class="toolbar" style="margin-top:0">
         <button id="set-save">Enregistrer</button>
@@ -218,6 +221,7 @@ footer code{background:#0e141d;padding:2px 6px;border-radius:6px}
   </main>
 
   <footer>
+    <span id="donate"></span>
     API locale — <code>POST /convert</code> · <code>POST /convert-batch</code> ·
     <code>POST /publish-soundslice</code> · <code>GET/POST /workflows</code> ·
     <code>POST /workflows/:id/run</code>
@@ -494,15 +498,29 @@ async function loadSettings(){
     const s=await api('/settings');
     $('set-src').textContent=s.source==='env'?'variables d\'environnement':s.source==='store'?'stockage local':'non configuré';
     $('set-msg').textContent=s.configured?`Configuré (${s.appId}). Mot de passe jamais affiché.`:'Non configuré.';
+    if(s.donateUrl)$('set-donate').value=s.donateUrl;
   }catch(e){$('set-msg').textContent='Réglages : '+e.message;}
+  loadDonate();
+}
+async function loadDonate(){
+  try{
+    const c=await api('/config');
+    const box=$('donate');
+    if(c.donateUrl){
+      box.innerHTML='';
+      const a=document.createElement('a');a.className='btn';a.target='_blank';a.rel='noopener';
+      a.href=c.donateUrl;a.textContent='☕ Soutenir';
+      box.appendChild(a);box.appendChild(document.createTextNode(' '));
+    }else box.innerHTML='';
+  }catch(e){}
 }
 $('set-save').addEventListener('click',async()=>{
-  const appId=$('set-id').value.trim(),pw=$('set-pw').value;
+  const appId=$('set-id').value.trim(),pw=$('set-pw').value,donate=$('set-donate').value.trim();
   if(!appId||!pw){toast('Application ID et mot de passe requis.',true);return;}
   try{
-    await api('/settings',{method:'POST',body:JSON.stringify({appId,password:pw})});
+    await api('/settings',{method:'POST',body:JSON.stringify({appId,password:pw,donateUrl:donate||undefined})});
     $('set-pw').value='';$('set-id').value='';
-    toast('Clé enregistrée sur cet appareil.');await loadSettings();refreshHealth();
+    toast('Réglages enregistrés sur cet appareil.');await loadSettings();refreshHealth();
   }catch(e){toast(e.message,true);}
 });
 $('set-test').addEventListener('click',async()=>{

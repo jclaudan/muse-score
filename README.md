@@ -2,6 +2,8 @@
 
 Convertit des fichiers MIDI en MusicXML via MuseScore, en local et hors-ligne.
 
+[![Soutenir](https://img.shields.io/badge/Soutenir-Stripe-635BFF?style=for-the-badge&logo=stripe)](https://buy.stripe.com/REMPLACE-MOI)
+
 - **App desktop** Windows / macOS / Linux (Electron, MuseScore embarqué)
 - **Interface web** : drag & drop d'un ou plusieurs `.mid`, téléchargement direct des `.musicxml` (+ `.zip`)
 - **API REST** : `POST /convert`, `POST /convert-batch`
@@ -116,6 +118,14 @@ docker compose up --build -d
 ## Dev
 
 Voir [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Soutenir
+
+Un bouton « Soutenir » (lien Stripe) s'affiche dans le pied de page quand
+`DONATE_URL` est défini (variable d'environnement, `docker-compose.yml`, ou
+champ « Lien de don » des Réglages). Crée le lien dans ton Dashboard Stripe :
+Payments → Payment Links (paiement unique, montant libre possible), puis
+remplace `https://buy.stripe.com/REMPLACE-MOI` (badge ci-dessus + `.env.example`).
 
 ## Licence
 

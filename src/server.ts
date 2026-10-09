@@ -17,6 +17,7 @@ import {
   clearCredentials,
   createWorkflow,
   deleteWorkflow,
+  donateUrl,
   listRuns,
   listWorkflows,
   loadStore,
@@ -339,12 +340,17 @@ app.post("/settings", async (req, reply) => {
   const body = (await req.body) as any;
   const appId = String(body?.appId ?? "").trim();
   const password = String(body?.password ?? "");
+  const donate = body?.donateUrl !== undefined ? String(body.donateUrl) : undefined;
   if (!appId || !password) {
     return reply
       .code(400)
       .send({ error: 'Champs "appId" et "password" requis' });
   }
-  await setCredentials(appId, password);
+  try {
+    await setCredentials(appId, password, donate);
+  } catch (e) {
+    return reply.code(400).send({ error: (e as Error).message });
+  }
   return maskedSettings();
 });
 
@@ -363,6 +369,9 @@ app.post("/settings/test", async (req, reply) => {
       .send({ ok: false, error: (e as Error).message });
   }
 });
+
+// --- Config publique (aucun secret) : lien de don affiché dans l'UI
+app.get("/config", async () => ({ donateUrl: donateUrl() }));
 
 // --- Workflows : conversion + publication configurables et rejouables
 app.get("/workflows", async () => listWorkflows());
